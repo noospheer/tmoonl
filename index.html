@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tmoonl.com</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='16' cy='16' rx='13' ry='7' fill='none' stroke='%230f5c6e' stroke-width='4'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #000000; --ink: #e8eef1; --muted: #8d9aa4; --accent: #5fb3c4; --gold: #d3a556;
+    --wire: 95,140,150;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body { background: var(--bg); color: var(--ink);
+         font-family: "Helvetica Neue", Arial, system-ui, sans-serif;
+         height: 100vh; height: 100dvh; padding: 0 16px;
+         display: flex; align-items: center; justify-content: center; }
+  main { width: 100%; max-width: min(760px, calc((100dvh - 90px) * 1.5)); text-align: center; }
+  canvas { width: 100%; aspect-ratio: 3 / 2; display: block; }
+  .eq { font-family: Georgia, "DejaVu Serif", serif; font-style: italic; font-size: clamp(17px, 2.6vw, 22px);
+        margin: 4px 0 0; }
+</style>
+</head>
+<body>
+<main>
+  <canvas id="t" aria-label="A rotating torus with a compounding growth curve"></canvas>
+  <div class="eq">V<sub>n</sub> = V<sub>0</sub> (1 + r)<sup>n</sup> / (1 − s·g)</div>
+</main>
+<script>
+(function () {
+  const cv = document.getElementById('t'), ctx = cv.getContext('2d');
+  const R = 1, r = 0.44, tilt = 70 * Math.PI / 180, TURNS = 9, HN = 900;
+  const ca = Math.cos(tilt), sa = Math.sin(tilt);
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W, H, S, cx, cy, t0 = null;
+
+  function size() {
+    const d = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = w * d; cv.height = h * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+    W = w; H = h; S = w / 300 * 98; cx = w / 2; cy = h * 0.47;
+  }
+  function P(u, v) {
+    const k = R + r * Math.cos(v), x = k * Math.cos(u), y = k * Math.sin(u), z = r * Math.sin(v);
+    return [cx + S * x, cy - S * (y * ca - z * sa), y * sa + z * ca];
+  }
+  function hex(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+  function mix(a, b, t) { return a.map((v, i) => Math.round(v + (b[i] - v) * t)); }
+  const STOPS = [[0, '#0f5c6e'], [0.28, '#00c8d7'], [0.52, '#6a5cff'], [0.76, '#ff3d9a'], [1, '#ffb347']];
+  function grad(t) {
+    for (let i = 1; i < STOPS.length; i++) if (t <= STOPS[i][0]) {
+      const [p0, c0] = STOPS[i - 1], [p1, c1] = STOPS[i];
+      return mix(hex(c0), hex(c1), (t - p0) / (p1 - p0)); }
+    return hex(STOPS[STOPS.length - 1][1]);
+  }
+
+  function frame(t) {
+    // rotation speed eases from 0 up to TOP and back on a sine wave: speed = TOP·(1 − cos(OMEGA·t)) / 2
+    if (t0 === null) t0 = t;
+    const TOP = 0.000666, OMEGA = 2 * Math.PI / 14000, tt = t - t0;
+    const phi = reduce ? 0 : (TOP / 2) * (tt - Math.sin(OMEGA * tt) / OMEGA);
+    const bg = hex(css('--bg')), wire = css('--wire');
+    ctx.clearRect(0, 0, W, H);
+
+    // 2D exponential underlay
+    const x0 = W * 0.047, x1 = W * 0.973, yb = H * 0.83, yt = H * 0.03, k = 4.2;
+    const curve = () => { ctx.beginPath();
+      for (let i = 0; i <= 120; i++) { const q = i / 120, y = (Math.exp(k * q) - 1) / (Math.exp(k) - 1);
+        const X = x0 + (x1 - x0) * q, Y = yb - (yb - yt) * y; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); } };
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const lg = ctx.createLinearGradient(x0, 0, x1, 0);
+    STOPS.forEach(([p, c]) => lg.addColorStop(p, c));
+    ctx.globalAlpha = 0.22; curve(); ctx.strokeStyle = lg; ctx.lineWidth = Math.max(4, W / 60); ctx.stroke();
+    ctx.globalAlpha = 0.85;
+    curve(); ctx.strokeStyle = lg; ctx.lineWidth = 1.2; ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+
+    const segs = [];
+    const add = (a, b, kind, g, pos) => segs.push([a, b, (a[2] + b[2]) / 2, kind, g, pos]);
+    for (let i = 0; i < 28; i++) { const u = 2 * Math.PI * i / 28 + phi;
+      for (let j = 0; j < 48; j++) add(P(u, 2 * Math.PI * j / 48), P(u, 2 * Math.PI * (j + 1) / 48), 0); }
+    for (let m = 0; m < 10; m++) { const v = 2 * Math.PI * m / 10;
+      for (let j = 0; j < 96; j++) add(P(2 * Math.PI * j / 96 + phi, v), P(2 * Math.PI * (j + 1) / 96 + phi, v), 0); }
+    for (let j = 0; j < HN; j++) { const a = j / HN, b = (j + 1) / HN;
+      add(P(2 * Math.PI * a + phi, 2 * Math.PI * TURNS * a + Math.PI / 2),
+          P(2 * Math.PI * b + phi, 2 * Math.PI * TURNS * b + Math.PI / 2), 1, Math.exp(4 * a) / Math.exp(4), a); }
+    segs.sort((p, q) => q[2] - p[2]);   // far first
+
+    for (const [a, b, z, kind, g, pos] of segs) {
+      const near = 1 - (z + 1.44) / 2.88;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+      if (kind === 0) { ctx.strokeStyle = `rgba(${wire},${0.25 + 0.45 * near})`; ctx.lineWidth = 0.5; }
+      else { const c = mix(bg, grad(pos), 0.3 + 0.7 * near);
+        ctx.strokeStyle = `rgb(${c})`; ctx.lineWidth = (0.35 + 3.2 * g) * S / 98; }
+      ctx.stroke();
+    }
+    if (!reduce) requestAnimationFrame(frame);
+  }
+  size(); window.addEventListener('resize', size);
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
